@@ -26,8 +26,8 @@ DEFAULT_NETLIFY_TOKEN = os.environ.get("NETLIFY_TOKEN", "")
 NETLIFY_SITE_ID = os.environ.get("NETLIFY_SITE_ID", "")
 NETLIFY_URL = os.environ.get("NETLIFY_URL", "")
 
-# BI 报表配置
-REPORT_NAME = "思维学员明细（学员维度）"
+# BI 报表配置 — 报表名通过环境变量注入
+REPORT_NAME = os.environ.get("BI_REPORT_STUDENT_DETAIL", "")
 DEFAULT_FILTERS = "是否在读学员=全部"
 DEFAULT_OUTPUT_DIR = str(Path.home() / "Desktop")
 
@@ -43,17 +43,9 @@ COLUMN_MAP = {
 }
 
 # 手推链接配置
-TAIWAN_PID = "71181"
-DEFAULT_PID = "4113"
-LINK_TEMPLATE = (
-    "https://market-h5.61info.cn/maliang/popularize-{pid}.html"
-    "?business_Type=invite"
-    "&courseBelong=WANDOU"
-    "&courseSubjectType=1"
-    "&page_source=shoutui"
-    "&popularizeId={pid}"
-    "&invite_userID={uid}"
-)
+TAIWAN_PID = os.environ.get("TAIWAN_PID", "")
+DEFAULT_PID = os.environ.get("DEFAULT_PID", "")
+LINK_TEMPLATE = os.environ.get("LINK_TEMPLATE", "{pid}-{uid}")  # 推广链接模板,含 {pid}/{uid} 占位
 
 # TSV 字段顺序 (与 template.html 中 JavaScript 解析顺序一致)
 TSV_FIELDS = ["sid", "uid", "nick", "student", "lp", "group", "region"]

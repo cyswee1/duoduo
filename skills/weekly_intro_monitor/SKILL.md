@@ -66,7 +66,7 @@ python3 .claude/skills/weekly_intro_monitor/monitor.py all --team 美澳 --force
 
 ### 阶段2：业绩进度播报
 
-1. 从 BI 下载 `转介绍益智业绩播报_LP维度_末次渠道`（当日 + 池子过滤）
+1. 从 BI 下载业绩播报报表(报表名通过环境变量 `BI_REPORT_PROGRESS` 配置,当日 + 池子过滤)
 2. 从钉钉多维表格读取TL登记的今日目标
 3. 计算进度和GAP：
    - 今日达成进度 = 今日例子数 / 今日例子目标
@@ -76,7 +76,7 @@ python3 .claude/skills/weekly_intro_monitor/monitor.py all --team 美澳 --force
 
 ### 阶段3：外呼跟进预警
 
-1. 从 BI 下载 `思维转介绍过程跟进报表_末次渠道`（当周周一~当日 + 池子过滤）
+1. 从 BI 下载外呼跟进报表(报表名通过环境变量 `BI_REPORT_FOLLOWUP` 配置,当周周一~当日 + 池子过滤)
 2. 按池子分组计算外呼跟进率
 3. 标记低于阈值的小组/LP
 4. 分池子发送预警到钉钉群

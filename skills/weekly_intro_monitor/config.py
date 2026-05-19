@@ -38,7 +38,7 @@ DINGTALK_CLIENT_SECRET = os.environ.get("DINGTALK_CLIENT_SECRET", "")
 DINGTALK_TABLE_ID = os.environ.get("DINGTALK_TABLE_ID", "")
 DINGTALK_TABLE_SHEET = os.environ.get("DINGTALK_TABLE_SHEET", "")
 
-BI_REPORT_PROGRESS = "转介绍益智业绩播报_LP维度_末次渠道"
-BI_REPORT_FOLLOWUP = "思维转介绍过程跟进报表_末次渠道"
+BI_REPORT_PROGRESS = os.environ.get("BI_REPORT_PROGRESS", "")
+BI_REPORT_FOLLOWUP = os.environ.get("BI_REPORT_FOLLOWUP", "")
 
 OUTPUT_DIR = Path.home() / "Downloads"

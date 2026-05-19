@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 BI_URL = os.environ.get("BI_URL", "")
 BI_USER = os.environ.get("BI_USERNAME", "")
 BI_PASS = os.environ.get("BI_PASSWORD", "")
-REPORT_NAME = "思维转介绍过程跟进报表_末次渠道"
+REPORT_NAME = os.environ.get("BI_REPORT_FOLLOWUP", "")
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch(channel="chrome", headless=False)

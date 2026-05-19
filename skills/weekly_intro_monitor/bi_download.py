@@ -88,7 +88,7 @@ def _navigate_tree(page, path):
 
     Args:
         page: Playwright page对象
-        path: 路径字符串，如 "海外直播业务线>海外后端>思维-后端>转介绍>转介绍监控>思维转介绍过程跟进报表_末次渠道"
+        path: 路径字符串(BI 目录树形如 "业务线>部门>报表名"),具体路径通过环境变量配置
     """
     parts = [p.strip() for p in path.split('>')]
     print(f"  目录树导航: {' > '.join(parts)}")

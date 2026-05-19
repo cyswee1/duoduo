@@ -85,7 +85,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
   <div id="hint" class="hint">输入上级豌豆 ID 即可查询<br>例如：20910010</div>
 </div>
 
-<div class="footer">仅供内部使用</div>
+<div class="footer">仅供配置使用方使用</div>
 
 <script>
 // ── 压缩数据 ──
@@ -163,8 +163,8 @@ async function init() {
 
 // ── 生成链接 ──
 function makeLink(uid, region) {
-  var popularizeId = (region === '台湾') ? '71181' : '4113';
-  return 'https://market-h5.61info.cn/maliang/popularize-' + popularizeId + '.html?business_Type=invite&courseBelong=WANDOU&courseSubjectType=1&page_source=shoutui&popularizeId=' + popularizeId + '&invite_userID=' + uid;
+  var popularizeId = (region === window.__REGION_TAIWAN__) ? window.__TAIWAN_PID__ : window.__DEFAULT_PID__;
+  return window.__LINK_BASE__.replace('{pid}', popularizeId).replace('{uid}', uid);
 }
 
 // ── 查询 ──

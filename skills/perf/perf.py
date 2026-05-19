@@ -15,8 +15,8 @@ BI_USER = os.environ.get("BI_USERNAME", "")
 BI_PASS = os.environ.get("BI_PASSWORD", "")
 
 # Team filters
-VALID_TEAMS = {'港澳益智教学服务区', '美澳益智教学服务区', '台湾益智教学服务区'}
-VALID_TEAMS_ROLLING = {'港澳益智教学服务区', '美澳益智教学服务区', '台湾益智教学服务区', '益智海外教学服务区'}
+VALID_TEAMS = set(t.strip() for t in os.environ.get("VALID_TEAMS", "").split(",") if t.strip())
+VALID_TEAMS_ROLLING = set(t.strip() for t in os.environ.get("VALID_TEAMS_ROLLING", "").split(",") if t.strip())
 
 # ================================================================
 # CLI
@@ -48,7 +48,7 @@ def ensure_playwright():
 
 
 def download_sales_detail(base_dir, year, month):
-    """Download 益智海外用户销售明细_转介绍 with 末次进线渠道一级分类=转介绍, date=current month."""
+    """Download monthly sales detail with 转介绍 channel filter for current month."""
     from playwright.sync_api import sync_playwright
     import calendar
     sys.path.insert(0, str(Path(__file__).parent.parent / 'bi_skill'))
@@ -58,7 +58,7 @@ def download_sales_detail(base_dir, year, month):
     last_day = calendar.monthrange(year, month)[1]
     start_date = f'{year}-{m_str}-01'
     end_date = f'{year}-{m_str}-{last_day:02d}'
-    report_name = '益智海外用户销售明细_转介绍'
+    report_name = os.environ.get("BI_REPORT_SALES_DETAIL", "")
     target = Path(base_dir) / '销售明细-当月+重复进线.xlsx'
     if target.exists(): target.unlink()
 
@@ -121,7 +121,7 @@ def download_broadcast(base_dir, year, month):
     target = Path(base_dir) / '业绩播报.xlsx'
     if target.exists(): target.unlink()
 
-    print(f"  下载: 转介绍益智业绩播报_LP维度_末次渠道")
+    print(f"  下载: {os.environ.get('BI_REPORT_PROGRESS', '')}")
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel="chrome", headless=False)
@@ -131,7 +131,7 @@ def download_broadcast(base_dir, year, month):
         _login_bi(page)
         _enter_analysis(page)
         time.sleep(3)
-        _search_and_open(page, '转介绍益智业绩播报_LP维度_末次渠道')
+        _search_and_open(page, os.environ.get("BI_REPORT_PROGRESS", ""))
         _check_refresh(page)
         _check_session_timeout(page)
         _do_export(page)
@@ -150,15 +150,15 @@ def download_broadcast(base_dir, year, month):
 
 
 def download_lp_structure(base_dir, year, month):
-    """Search and download 海外思维LP架构表."""
+    """Search and download LP structure report."""
     from playwright.sync_api import sync_playwright
     sys.path.insert(0, str(Path(__file__).parent.parent / 'bi_skill'))
     from bi_skill import _do_export, _wait_download, _check_session_timeout
 
-    target = Path(base_dir) / '海外思维LP架构表.xlsx'
+    target = Path(base_dir) / (os.environ.get("BI_REPORT_LP_STRUCTURE", "") + ".xlsx")
     if target.exists(): target.unlink()
 
-    print(f"  下载: 海外思维LP架构表")
+    print(f"  下载: {os.environ.get('BI_REPORT_LP_STRUCTURE', '')}")
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel="chrome", headless=False)
@@ -168,7 +168,7 @@ def download_lp_structure(base_dir, year, month):
         _login_bi(page)
         _enter_analysis(page)
         time.sleep(3)
-        _search_and_open(page, '海外思维LP架构表')
+        _search_and_open(page, os.environ.get("BI_REPORT_LP_STRUCTURE", ""))
         _check_refresh(page)
         _check_session_timeout(page)
         _do_export(page)
@@ -187,7 +187,7 @@ def download_lp_structure(base_dir, year, month):
 
 
 def download_rolling(base_dir, year, month):
-    """Download 小组-滚动成单: 益智海外用户销售明细_转介绍 with specific filters."""
+    """Download rolling-conversion sales detail with specific date filters."""
     from playwright.sync_api import sync_playwright
     import calendar
     sys.path.insert(0, str(Path(__file__).parent.parent / 'bi_skill'))
@@ -202,7 +202,7 @@ def download_rolling(base_dir, year, month):
     end_date = f'{year}-{m_str}-{last_day:02d}'
     start_month = f'{year}-{m_str}-01'
 
-    report_name = '益智海外用户销售明细_转介绍'
+    report_name = os.environ.get("BI_REPORT_SALES_DETAIL", "")
     print(f"  下载: 小组-滚动成单")
     print(f"  报表: {report_name}")
     print(f"  筛选: 末次渠道时间=2020-01-01~{end_date}, 首签时间={start_month}~{end_date}, 末次进线渠道一级分类=转介绍")
@@ -478,7 +478,7 @@ def calculate_incentives(base_dir, year, month):
 
 
 def _load_lp_structure(base_dir, year, month):
-    df_raw = pd.read_excel(Path(base_dir)/'海外思维LP架构表.xlsx', sheet_name='海外思维LP架构表', header=None)
+    df_raw = pd.read_excel(Path(base_dir) / (os.environ.get("BI_REPORT_LP_STRUCTURE", "") + ".xlsx"), sheet_name=os.environ.get("BI_REPORT_LP_STRUCTURE", ""), header=None)
     df = df_raw.iloc[4:].copy()
     df.columns = ['大区','团队','团队id','小组','小组id','主管','姓名','员工编号','人员id',
                   '入职时间','离职日期','是否在职','入职时长月份','入职时长分组','职位','职级2']
