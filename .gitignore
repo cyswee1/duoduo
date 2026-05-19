@@ -1,0 +1,57 @@
+# Secrets / 凭证
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.token
+*.secret
+
+# 本地真实配置(包含真实姓名/userid/chatid)
+team_config_local.py
+config/local.*
+config/private.*
+secrets/
+
+# 依赖和构建产物
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+.next/
+.venv/
+venv/
+
+# 本地报表/缓存
+reports/private/
+reports/tmp/
+*.log
+
+# 业务原始数据 / 导出文件
+data/raw/
+exports/
+downloads/
+private/
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.zip
+*.7z
+*.rar
+
+# OS / 编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# Claude Code 本地配置
+.claude/settings.local.json
+.claude/projects/

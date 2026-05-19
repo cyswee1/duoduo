@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI Weekly Progress Report"
+  short_description: "Generate leader-ready AI weekly progress reports."
+  default_prompt: "使用 $ai-weekly-progress-report，按正式流程生成本周 AI 周进度汇报。"
+
+policy:
+  allow_implicit_invocation: true

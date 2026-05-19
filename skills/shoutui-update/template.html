@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>手推链接查询</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f0f2f5;min-height:100vh}
+.header{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:20px;text-align:center}
+.header h1{font-size:20px;font-weight:600}
+.header p{font-size:12px;opacity:.85;margin-top:4px}
+.container{max-width:480px;margin:0 auto;padding:16px}
+.search-card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.search-card label{font-size:14px;font-weight:600;color:#333;display:block;margin-bottom:10px}
+.input-row{display:flex;gap:8px}
+.input-row input{flex:1;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;outline:none;transition:border-color .2s}
+.input-row input:focus{border-color:#667eea}
+.input-row button{padding:12px 20px;background:#667eea;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s}
+.input-row button:hover{background:#5a6fd6}
+.input-row button:disabled{background:#bbb;cursor:not-allowed}
+.status{padding:12px;text-align:center;font-size:13px;color:#999}
+.status.error{color:#e74c3c}
+.status.success{color:#27ae60}
+.result{background:#fff;border-radius:12px;margin-top:12px;box-shadow:0 2px 12px rgba(0,0,0,.06);overflow:hidden;display:none}
+.result.show{display:block}
+.info-table{width:100%;border-collapse:collapse}
+.info-table td{padding:11px 16px;font-size:14px;border-bottom:1px solid #f5f5f5}
+.info-table td:first-child{color:#888;width:80px;white-space:nowrap}
+.info-table td:last-child{color:#333;font-weight:500}
+.link-section{padding:16px;background:#f8f9ff;border-top:1px solid #e8eaf6}
+.link-section .label{font-size:13px;color:#667eea;font-weight:600;margin-bottom:8px}
+.link-section .link-box{font-size:13px;color:#555;word-break:break-all;background:#fff;padding:10px;border-radius:6px;border:1px solid #e8eaf6;line-height:1.6;user-select:all}
+.copy-btn{width:100%;margin-top:10px;padding:12px;background:#667eea;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s}
+.copy-btn:hover{background:#5a6fd6}
+.copy-btn:active{background:#4c5ec4}
+.loading{text-align:center;padding:60px 20px;color:#999}
+.loading .spinner{display:inline-block;width:40px;height:40px;border:3px solid #e0e0e0;border-top-color:#667eea;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hint{text-align:center;color:#aaa;font-size:13px;padding:40px 16px;line-height:1.8}
+.footer{text-align:center;padding:20px;color:#bbb;font-size:11px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>手推链接查询</h1>
+  <p>输入上级豌豆 ID 生成专属手推链接</p>
+</div>
+
+<div class="container">
+  <div class="search-card">
+    <label for="sid">上级豌豆 ID</label>
+    <div class="input-row">
+      <input type="text" id="sid" placeholder="例如：20910010" inputmode="numeric" autofocus autocomplete="off">
+      <button id="btn" onclick="lookup()">查询</button>
+    </div>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <div id="loading" class="loading" style="display:none">
+    <div class="spinner"></div>
+    <p>数据加载中…</p>
+  </div>
+
+  <div id="result" class="result">
+    <table class="info-table">
+      <tr><td>上级豌豆 ID</td><td id="r_sid">-</td></tr>
+      <tr><td>平台用户 ID</td><td id="r_uid">-</td></tr>
+      <tr><td>微信昵称</td><td id="r_nick">-</td></tr>
+      <tr><td>学员姓名</td><td id="r_stu">-</td></tr>
+      <tr><td>LP 姓名</td><td id="r_lp">-</td></tr>
+      <tr><td>LP 小组</td><td id="r_group">-</td></tr>
+      <tr><td>区域等级</td><td id="r_region">-</td></tr>
+    </table>
+    <div class="link-section">
+      <div class="label">手推链接</div>
+      <div class="link-box" id="r_link">-</div>
+      <button class="copy-btn" onclick="copyLink()">一键复制手推链接</button>
+      <button class="copy-btn" onclick="openLink()" style="background:#27ae60;margin-top:8px">打开链接</button>
+    </div>
+  </div>
+
+  <div id="hint" class="hint">输入上级豌豆 ID 即可查询<br>例如：20910010</div>
+</div>
+
+<div class="footer">仅供内部使用</div>
+
+<script>
+// ── 压缩数据 ──
+var _B64 = "{{B64_DATA}}";
+
+// ── 全局状态 ──
+var _map = null;
+var _loading = false;
+var _ready = false;
+var _link = '';
+
+// ── 解压 & 解析 ──
+async function init() {
+  if (_ready) return;
+  if (_loading) return;
+  _loading = true;
+
+  try {
+    // base64 decode
+    var bin = atob(_B64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+    // gzip decompress
+    var ds = new DecompressionStream('gzip');
+    var writer = ds.writable.getWriter();
+    var reader = ds.readable.getReader();
+    writer.write(bytes);
+    writer.close();
+
+    var chunks = [];
+    while (true) {
+      var r = await reader.read();
+      if (r.done) break;
+      chunks.push(r.value);
+    }
+
+    // Combine chunks
+    var totalLen = chunks.reduce(function(a,c){return a+c.length}, 0);
+    var combined = new Uint8Array(totalLen);
+    var offset = 0;
+    for (var j = 0; j < chunks.length; j++) {
+      combined.set(chunks[j], offset);
+      offset += chunks[j].length;
+    }
+
+    // Decode UTF-8
+    var text = new TextDecoder().decode(combined);
+
+    // Parse TSV into Map
+    _map = new Map();
+    var lines = text.split('\n');
+    for (var k = 0; k < lines.length; k++) {
+      var parts = lines[k].split('|');
+      if (parts.length >= 7) {
+        _map.set(parts[0], {
+          u: parts[1],
+          n: parts[2],
+          s: parts[3],
+          l: parts[4],
+          g: parts[5],
+          r: parts[6]
+        });
+      }
+    }
+
+    _ready = true;
+    setStatus('就绪 (' + _map.size + ' 条)，请输入上级豌豆 ID');
+  } catch(e) {
+    setStatus('数据加载失败: ' + e.message, true);
+    console.error(e);
+  }
+  _loading = false;
+}
+
+// ── 生成链接 ──
+function makeLink(uid, region) {
+  var popularizeId = (region === '台湾') ? '71181' : '4113';
+  return 'https://market-h5.61info.cn/maliang/popularize-' + popularizeId + '.html?business_Type=invite&courseBelong=WANDOU&courseSubjectType=1&page_source=shoutui&popularizeId=' + popularizeId + '&invite_userID=' + uid;
+}
+
+// ── 查询 ──
+async function lookup() {
+  var sid = document.getElementById('sid').value.trim();
+  if (!sid) { setStatus('请输入上级豌豆 ID', true); return; }
+  if (!/^\d+$/.test(sid)) { setStatus('上级豌豆 ID 应为纯数字', true); return; }
+
+  if (!_ready) {
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('hint').style.display = 'none';
+    setStatus('首次加载数据…', false);
+    await init();
+    document.getElementById('loading').style.display = 'none';
+  }
+
+  var info = _map.get(sid);
+  if (!info) {
+    document.getElementById('result').classList.remove('show');
+    setStatus('未找到该上级豌豆 ID，请确认输入正确', true);
+    return;
+  }
+
+  _link = makeLink(info.u, info.r);
+
+  document.getElementById('r_sid').textContent = sid;
+  document.getElementById('r_uid').textContent = info.u;
+  document.getElementById('r_nick').textContent = info.n;
+  document.getElementById('r_stu').textContent = info.s;
+  document.getElementById('r_lp').textContent = info.l;
+  document.getElementById('r_group').textContent = info.g;
+  document.getElementById('r_region').textContent = info.r;
+  document.getElementById('r_link').textContent = _link;
+  document.getElementById('result').classList.add('show');
+  document.getElementById('hint').style.display = 'none';
+  setStatus('查询成功', false);
+}
+
+// ── 复制 ──
+function copyLink() {
+  if (!_link) return;
+  navigator.clipboard.writeText(_link).then(function(){
+    setStatus('已复制到剪贴板', false);
+  }).catch(function(){
+    var el = document.getElementById('r_link');
+    var r = document.createRange();
+    r.selectNodeContents(el);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    setStatus('请手动复制（已自动选中）', false);
+  });
+}
+
+// ── 打开链接 ──
+function openLink() {
+  if (!_link) return;
+  window.open(_link, '_blank');
+}
+
+// ── 辅助 ──
+function setStatus(msg, isErr) {
+  var el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status' + (isErr ? ' error' : '');
+}
+
+// ── 预热加载 ──
+document.getElementById('sid').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') lookup();
+});
+setTimeout(init, 100);  // 后台静默加载数据
+</script>
+</body>
+</html>
