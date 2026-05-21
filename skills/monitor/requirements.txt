@@ -1,0 +1,41 @@
+# Monitor Skill 依赖
+
+## Python 依赖
+
+```bash
+pip install pyyaml pandas openpyxl matplotlib playwright requests
+playwright install chromium
+```
+
+## 系统依赖
+
+- Python 3.9+
+- Chrome/Chromium 浏览器（用于 Playwright 自动化）
+- 中文字体（macOS 自带 PingFang.ttc）
+
+## 凭证文件
+
+创建 `~/.claude/secrets/intro_monitor.env`（或配置文件中指定的路径）：
+
+```bash
+# BI 系统
+BI_URL=https://your-bi-host.example.com/smartbi/vision/index.jsp
+BI_USER=your_user
+BI_PASS=your_password
+
+# 钉钉 API
+DINGTALK_APP_KEY=your_app_key
+DINGTALK_APP_SECRET=your_app_secret
+DINGTALK_ROBOT_CODE=your_robot_code
+DINGTALK_MY_USERID=your_userid
+DINGTALK_TEST_CHATID=your_chatid
+
+# 钉钉多维表格
+DINGTALK_TABLE_ID=your_table_id
+DINGTALK_TABLE_SHEET=your_sheet_id
+```
+
+设置权限：
+```bash
+chmod 600 ~/.claude/secrets/intro_monitor.env
+```

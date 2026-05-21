@@ -92,7 +92,7 @@ with sync_playwright() as pw:
         print(f"  - label: {inp['label']}, placeholder: {inp['placeholder']}, value: {inp['value']}")
 
     # 方法3: 截图保存
-    screenshot_path = "/Users/dory/Downloads/外呼跟进报表_筛选器.png"
+    screenshot_path = str(Path.home() / "Downloads" / "外呼跟进报表_筛选器.png")
     page.screenshot(path=screenshot_path, full_page=True)
     print(f"\n已保存截图: {screenshot_path}")
 
