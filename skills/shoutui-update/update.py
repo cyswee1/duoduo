@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""手推链接更新 — 一键完成 BI 下载 → 链接生成 → 部署 → 测试"""
+"""配置驱动的链接生成 + Netlify 部署 skill
+
+流程: BI 下载 → Excel 解析 → 链接生成 → 自包含 HTML 构建 → Netlify 部署 → 测试
+
+所有业务参数(数据源、列映射、链接规则、Netlify 凭证)由 YAML 配置注入。
+"""
 
 import argparse
 import base64
@@ -12,63 +17,70 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from io import BytesIO
 
 import pandas as pd
+import yaml
 
-# ── 默认配置 ──────────────────────────────────────────────────
 
 SKILL_DIR = Path(__file__).resolve().parent
-TEMPLATE_PATH = SKILL_DIR / "template.html"
-BI_TOOL_PATH = SKILL_DIR.parent / "bi_skill" / "bi_skill.py"
-# Netlify 凭证 — 从环境变量读取,不要硬编码
-DEFAULT_NETLIFY_TOKEN = os.environ.get("NETLIFY_TOKEN", "")
-NETLIFY_SITE_ID = os.environ.get("NETLIFY_SITE_ID", "")
-NETLIFY_URL = os.environ.get("NETLIFY_URL", "")
-
-# BI 报表配置 — 报表名通过环境变量注入
-REPORT_NAME = os.environ.get("BI_REPORT_STUDENT_DETAIL", "")
-DEFAULT_FILTERS = "是否在读学员=全部"
-DEFAULT_OUTPUT_DIR = str(Path.home() / "Desktop")
-
-# Excel 列名映射 (BI 原始列名 → 输出字段)
-COLUMN_MAP = {
-    "数学学生id": "sid",
-    "平台用户ID": "uid",
-    "微信昵称": "nick",
-    "lp姓名": "lp",
-    "lp组别": "group",
-    "学员姓名": "student",
-    "区域等级": "region",
-}
-
-# 手推链接配置
-TAIWAN_PID = os.environ.get("TAIWAN_PID", "")
-DEFAULT_PID = os.environ.get("DEFAULT_PID", "")
-LINK_TEMPLATE = os.environ.get("LINK_TEMPLATE", "{pid}-{uid}")  # 推广链接模板,含 {pid}/{uid} 占位
-
-# TSV 字段顺序 (与 template.html 中 JavaScript 解析顺序一致)
-TSV_FIELDS = ["sid", "uid", "nick", "student", "lp", "group", "region"]
 
 
-# ── 步骤 1：从 BI 下载 Excel ──────────────────────────────────
+# ── 配置加载 ──────────────────────────────────────────────────
 
-def download_excel(output_dir=None):
-    """调用 bi_tool.py 从 Smartbi 下载报表，返回下载的文件路径"""
-    if output_dir is None:
-        output_dir = DEFAULT_OUTPUT_DIR
+def load_config(config_path):
+    """加载 YAML 配置,展开 ${env_var} 形式的环境变量引用"""
+    with open(config_path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    def _expand(obj):
+        if isinstance(obj, str):
+            m = re.fullmatch(r"\$\{([A-Z_][A-Z0-9_]*)\}", obj)
+            if m:
+                return os.environ.get(m.group(1), "")
+            return re.sub(
+                r"\$\{([A-Z_][A-Z0-9_]*)\}",
+                lambda x: os.environ.get(x.group(1), ""),
+                obj,
+            )
+        if isinstance(obj, dict):
+            return {k: _expand(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_expand(v) for v in obj]
+        return obj
+
+    return _expand(cfg)
+
+
+def _resolve_path(p, base):
+    """把相对路径解析为绝对路径(相对于 base)"""
+    if not p:
+        return None
+    p = os.path.expanduser(p)
+    if os.path.isabs(p):
+        return p
+    return str((Path(base) / p).resolve())
+
+
+# ── 步骤 1:从 BI 下载 Excel ──────────────────────────────────
+
+def download_excel(cfg, output_dir):
+    """通过 bi_skill 子进程下载 BI 报表"""
+    ds = cfg["datasource"]
+    bi_tool = _resolve_path(ds["bi_skill_path"], SKILL_DIR)
+    if not bi_tool or not Path(bi_tool).exists():
+        print(f"[ERROR] bi_skill 不存在: {bi_tool}")
+        sys.exit(1)
 
     cmd = [
-        sys.executable, str(BI_TOOL_PATH), "search",
-        "--name", REPORT_NAME,
-        "--filters", DEFAULT_FILTERS,
+        sys.executable, bi_tool, "search",
+        "--name", ds["report_name"],
+        "--filters", ds.get("filters", ""),
         "--output", str(output_dir),
     ]
-
-    print(f"[1/4] 从 BI 下载报表...")
+    print(f"[1/4] 从 BI 下载报表 {ds['report_name']!r} ...")
     print(f"  命令: {' '.join(cmd)}")
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=ds.get("timeout", 600))
 
     if result.returncode != 0:
         print(f"[ERROR] BI 下载失败 (exit={result.returncode})")
@@ -76,178 +88,172 @@ def download_excel(output_dir=None):
         print(f"  stderr: {result.stderr[-500:]}")
         sys.exit(1)
 
-    # 解析输出获取文件路径
-    stdout = result.stdout
-    filepath = None
+    match = re.search(r"下载完成[：:]\s*(.+\.xlsx?)", result.stdout)
+    if match and Path(match.group(1).strip()).exists():
+        path = match.group(1).strip()
+        print(f"  ✓ 下载完成: {path}")
+        return path
 
-    # 尝试从输出中匹配 "✅ 下载完成: <path>"
-    match = re.search(r"下载完成[：:]\s*(.+\.xlsx?)", stdout)
-    if match:
-        filepath = match.group(1).strip()
-        if Path(filepath).exists():
-            print(f"  ✓ 下载完成: {filepath}")
-            return filepath
-
-    # Fallback: 在输出目录找最新的 Excel
-    print("  → 从输出中未解析到路径，查找最新 Excel...")
     latest = _find_latest_excel(output_dir)
     if latest:
-        print(f"  ✓ 找到: {latest}")
+        print(f"  ✓ 找到最新 Excel: {latest}")
         return latest
 
     print("[ERROR] 未能找到下载的 Excel 文件")
     sys.exit(1)
 
 
-# ── 步骤 2：处理 Excel 生成手推链接 ─────────────────────────────
+# ── 步骤 2:解析 Excel,生成 TSV ──────────────────────────────
 
-def process_excel(excel_path):
-    """读取 BI Excel，生成 TSV 数据和统计信息"""
+def process_excel(cfg, excel_path):
+    """读取 BI Excel,按列映射抽取字段,生成 TSV 数据流"""
     print(f"[2/4] 处理 Excel: {excel_path}")
 
-    # 动态寻找表头行 (包含 '数学学生id' 的行)
-    df_raw = pd.read_excel(excel_path, header=None, dtype=str)
+    parsing = cfg["parsing"]
+    column_map = cfg["fields"]["column_map"]
+    tsv_fields = cfg["fields"]["tsv_fields"]
+    header_marker = parsing["header_marker"]
+    sid_field = parsing["sid_field"]
+    sid_pattern = parsing.get("sid_pattern", r"^\d+$")
 
+    df_raw = pd.read_excel(excel_path, header=None, dtype=str)
     header_row = None
-    for i in range(min(20, len(df_raw))):
+    for i in range(min(parsing.get("max_header_scan_rows", 20), len(df_raw))):
         row_vals = [str(v).strip() for v in df_raw.iloc[i].tolist() if str(v) != "nan"]
-        if "数学学生id" in row_vals:
+        if header_marker in row_vals:
             header_row = i
             break
 
     if header_row is None:
-        print("[ERROR] 未在 Excel 中找到表头行（含'数学学生id'）")
+        print(f"[ERROR] 未在 Excel 中找到表头行(含 {header_marker!r})")
         sys.exit(1)
-
     print(f"  表头行: 第 {header_row} 行 (0-indexed)")
 
-    # 重新读取，跳过前面的说明行
     df = pd.read_excel(excel_path, header=header_row, dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
     print(f"  原始行数: {len(df)}")
 
-    # 规范化列名（去除空格）
-    df.columns = [str(c).strip() for c in df.columns]
-
-    # 检查必需列是否存在
-    missing = [c for c in COLUMN_MAP if c not in df.columns]
+    missing = [c for c in column_map if c not in df.columns]
     if missing:
         print(f"[ERROR] 缺少必需列: {missing}")
         print(f"  实际列名: {list(df.columns)[:20]}")
         sys.exit(1)
 
-    # 筛选有效数据（数学学生id 不为空且为纯数字）
-    sid_col = "数学学生id"
-    df = df[df[sid_col].notna() & df[sid_col].str.match(r"^\d+$")].copy()
+    df = df[df[sid_field].notna() & df[sid_field].str.match(sid_pattern)].copy()
     print(f"  有效行数: {len(df)}")
 
-    # 提取并重命名列
-    data = df[list(COLUMN_MAP.keys())].copy()
-    data.columns = [COLUMN_MAP[c] for c in data.columns]
-
-    # 填充空值
-    for col in TSV_FIELDS:
+    data = df[list(column_map.keys())].copy()
+    data.columns = [column_map[c] for c in data.columns]
+    for col in tsv_fields:
         if col in data.columns:
             data[col] = data[col].fillna("").astype(str)
 
-    # 生成 TSV
+    sep = cfg["fields"].get("tsv_separator", "|")
     tsv_lines = []
     for _, row in data.iterrows():
-        vals = [row.get(f, "") for f in TSV_FIELDS]
-        # 清洗：移除字段内的换行和管道符
-        vals = [v.replace("\n", " ").replace("\r", "").replace("|", "/") for v in vals]
-        tsv_lines.append("|".join(vals))
+        vals = [row.get(f, "") for f in tsv_fields]
+        vals = [v.replace("\n", " ").replace("\r", "").replace(sep, "/") for v in vals]
+        tsv_lines.append(sep.join(vals))
 
     tsv_text = "\n".join(tsv_lines)
     print(f"  TSV 大小: {len(tsv_text):,} 字符, {len(tsv_lines):,} 行")
 
-    # 统计
-    taiwan_count = sum(1 for _, r in data.iterrows() if r.get("region") == "台湾")
-    print(f"  台湾学员: {taiwan_count:,} (popularizeId={TAIWAN_PID})")
-    print(f"  非台湾学员: {len(data) - taiwan_count:,} (popularizeId={DEFAULT_PID})")
-
-    return tsv_text, len(data)
+    _print_link_stats(cfg, data)
+    return tsv_text, len(data), data
 
 
-# ── 步骤 3：生成部署 HTML ─────────────────────────────────────
+def _print_link_stats(cfg, data):
+    """按 link_rules 打印各分组的记录数"""
+    rules = cfg.get("link_rules", {})
+    region_field = rules.get("region_field")
+    if not region_field or region_field not in data.columns:
+        return
+    branches = rules.get("branches", [])
+    for b in branches:
+        if "match" in b:
+            n = sum(1 for _, r in data.iterrows() if r.get(region_field) == b["match"])
+            print(f"  {b.get('label', b['match'])}: {n:,} (popularizeId={b['pid']})")
+    default = rules.get("default", {})
+    if default:
+        all_matches = set(b["match"] for b in branches if "match" in b)
+        n = sum(1 for _, r in data.iterrows() if r.get(region_field) not in all_matches)
+        print(f"  其他: {n:,} (popularizeId={default.get('pid')})")
 
-def generate_html(tsv_text):
-    """压缩 TSV 数据并填充 HTML 模板"""
+
+# ── 步骤 3:生成自包含 HTML ───────────────────────────────────
+
+def generate_html(cfg, tsv_text, output_dir):
+    """gzip 压缩 TSV → base64 → 注入到 HTML 模板"""
     print(f"[3/4] 生成部署页面...")
 
-    if not TEMPLATE_PATH.exists():
-        print(f"[ERROR] 模板文件不存在: {TEMPLATE_PATH}")
+    template_path = _resolve_path(cfg["html"]["template_path"], SKILL_DIR)
+    if not Path(template_path).exists():
+        print(f"[ERROR] 模板文件不存在: {template_path}")
         sys.exit(1)
 
-    # Gzip 压缩
     tsv_bytes = tsv_text.encode("utf-8")
-    compressed = gzip.compress(tsv_bytes, compresslevel=9)
+    compressed = gzip.compress(tsv_bytes, compresslevel=cfg["html"].get("compress_level", 9))
     b64_data = base64.b64encode(compressed).decode("ascii")
-
     print(f"  原始: {len(tsv_bytes):,} bytes")
-    print(f"  压缩后: {len(compressed):,} bytes (gzip level 9)")
+    print(f"  压缩后: {len(compressed):,} bytes")
     print(f"  Base64: {len(b64_data):,} chars")
 
-    # 读取模板并替换
-    template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    if "{{B64_DATA}}" not in template:
-        print("[ERROR] 模板中缺少 {{B64_DATA}} 占位符")
+    template = Path(template_path).read_text(encoding="utf-8")
+    placeholders = cfg["html"].get("placeholders", {})
+
+    substitutions = {
+        "{{B64_DATA}}": b64_data,
+        "{{REGION_FIELD_VALUE_TAIWAN}}": placeholders.get("region_taiwan_value", ""),
+        "{{TAIWAN_PID}}": str(placeholders.get("taiwan_pid", "")),
+        "{{DEFAULT_PID}}": str(placeholders.get("default_pid", "")),
+        "{{LINK_BASE_TEMPLATE}}": placeholders.get("link_base_template", ""),
+    }
+    html = template
+    for k, v in substitutions.items():
+        html = html.replace(k, v)
+
+    if "{{B64_DATA}}" in html:
+        print("[ERROR] 模板替换后仍有 {{B64_DATA}},检查模板")
         sys.exit(1)
 
-    html = template.replace("{{B64_DATA}}", b64_data)
-
-    # 写入输出文件
-    output_path = Path(DEFAULT_OUTPUT_DIR) / "index.html"
+    output_path = Path(output_dir) / "index.html"
     output_path.write_text(html, encoding="utf-8")
-    output_size = output_path.stat().st_size
-    print(f"  ✓ 页面已生成: {output_path} ({output_size:,} bytes)")
-
+    print(f"  ✓ 页面已生成: {output_path} ({output_path.stat().st_size:,} bytes)")
     return output_path
 
 
-# ── 步骤 4：部署到 Netlify ────────────────────────────────────
+# ── 步骤 4:Netlify 部署 ──────────────────────────────────────
 
-def deploy_netlify(html_path, token, site_id=None):
-    """将 HTML 页面部署到 Netlify"""
-    if site_id is None:
-        site_id = NETLIFY_SITE_ID
+def deploy_netlify(cfg, html_path):
+    """打包 HTML 上传到 Netlify"""
+    nl = cfg["deploy"]
+    token = nl.get("token")
+    site_id = nl.get("site_id")
+    if not token or not site_id:
+        print("[ERROR] deploy.token / deploy.site_id 未配置(可通过环境变量注入)")
+        sys.exit(1)
 
-    print(f"[4/4] 部署到 Netlify (site: {site_id})...")
+    print(f"[4/4] 部署到 Netlify (site: {site_id}) ...")
 
-    # 创建临时部署目录
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-
-        # 复制 index.html
         import shutil
         shutil.copy(html_path, tmp / "index.html")
 
-        # 写入 netlify.toml
         netlify_toml = tmp / "netlify.toml"
-        netlify_toml.write_text("""\
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Content-Type = "text/html; charset=UTF-8"
-""")
+        netlify_toml.write_text(nl.get("netlify_toml", '[[headers]]\n  for = "/*"\n  [headers.values]\n    Content-Type = "text/html; charset=UTF-8"\n'))
 
-        # 创建 zip
         zip_path = tmp / "deploy.zip"
         import zipfile
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(tmp / "index.html", "index.html")
             zf.write(netlify_toml, "netlify.toml")
 
-        zip_size = zip_path.stat().st_size
-        print(f"  部署包: {zip_size:,} bytes")
+        print(f"  部署包: {zip_path.stat().st_size:,} bytes")
 
-        # 上传到 Netlify
-        import urllib.request
-        import urllib.error
-
+        import urllib.request, urllib.error
         url = f"https://api.netlify.com/api/v1/sites/{site_id}/deploys"
-        data = zip_path.read_bytes()
-
-        req = urllib.request.Request(url, data=data, method="POST")
+        req = urllib.request.Request(url, data=zip_path.read_bytes(), method="POST")
         req.add_header("Authorization", f"Bearer {token}")
         req.add_header("Content-Type", "application/zip")
 
@@ -266,191 +272,131 @@ def deploy_netlify(html_path, token, site_id=None):
         deploy_url = result.get("deploy_ssl_url") or result.get("url", "")
         print(f"  状态: {state}")
         print(f"  部署 URL: {deploy_url}")
-
         if state not in ("ready", "uploaded", "processing"):
             print(f"[ERROR] 部署状态异常: {state}")
             sys.exit(1)
 
-    return NETLIFY_URL
+    return nl.get("public_url") or deploy_url
 
 
-# ── 步骤 5：测试 ──────────────────────────────────────────────
+# ── 步骤 5:部署后测试 ────────────────────────────────────────
 
-def test_deployment(url):
-    """验证部署是否成功"""
-    print(f"\n  测试部署...")
+def test_deployment(cfg, url):
+    print(f"\n  测试部署: {url}")
     import urllib.request
-
     try:
-        req = urllib.request.Request(url, method="HEAD")
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=30) as resp:
             ct = resp.headers.get("Content-Type", "")
             print(f"  HTTP {resp.status}, Content-Type: {ct}")
             if "text/html" not in ct:
                 print(f"  ⚠️  Content-Type 不是 text/html")
                 return False
 
-        # 测试链接目标可达性
-        test_link = LINK_TEMPLATE.format(pid=DEFAULT_PID, uid="test")
-        req2 = urllib.request.Request(test_link, method="HEAD")
-        with urllib.request.urlopen(req2, timeout=15) as resp2:
-            print(f"  手推链接可达: HTTP {resp2.status}")
+        rules = cfg.get("link_rules", {})
+        default = rules.get("default", {})
+        link_template = cfg["html"].get("placeholders", {}).get("link_base_template", "")
+        if link_template and default.get("pid"):
+            test_link = link_template.replace("{pid}", str(default["pid"])).replace("{uid}", "test")
+            with urllib.request.urlopen(urllib.request.Request(test_link, method="HEAD"), timeout=15) as resp2:
+                print(f"  推广链接可达: HTTP {resp2.status}")
 
-        print(f"  ✓ 测试通过: {url}")
+        print(f"  ✓ 测试通过")
         return True
-
     except Exception as e:
         print(f"  ⚠️  测试未完全通过: {e}")
         return False
 
 
-# ── 辅助函数 ──────────────────────────────────────────────────
+# ── 辅助:保存处理后的 Excel 供查阅 ───────────────────────────
+
+def save_processed_excel(cfg, data, output_dir):
+    out_cfg = cfg.get("output", {})
+    if not out_cfg.get("save_processed_excel"):
+        return
+    rules = cfg.get("link_rules", {})
+    region_field = rules.get("region_field")
+    uid_field_label = cfg["fields"]["column_map"].get(rules.get("uid_field"), "uid")
+    link_template = cfg["html"].get("placeholders", {}).get("link_base_template", "")
+
+    def _make_link(row):
+        pid = rules.get("default", {}).get("pid", "")
+        for b in rules.get("branches", []):
+            if row.get(region_field) == b.get("match"):
+                pid = b["pid"]
+                break
+        return link_template.replace("{pid}", str(pid)).replace("{uid}", str(row.get(uid_field_label, "")))
+
+    df_out = data.copy()
+    df_out["link"] = df_out.apply(_make_link, axis=1)
+
+    out_name = out_cfg.get("processed_filename", "processed.xlsx")
+    out_path = Path(output_dir) / out_name
+    df_out.to_excel(out_path, index=False)
+    print(f"  处理结果已保存: {out_path} ({len(df_out):,} 行)")
+
 
 def _find_latest_excel(directory):
-    """在目录中找最新的 Excel 文件"""
     d = Path(directory)
-    excels = [f for f in d.iterdir()
-              if f.is_file() and f.suffix.lower() in (".xlsx", ".xls")
-              and not f.name.startswith("~$") and not f.name.startswith(".~")]  # 排除临时文件
-    if not excels:
-        return None
-    return str(max(excels, key=lambda f: f.stat().st_mtime))
+    excels = [
+        f for f in d.iterdir()
+        if f.is_file() and f.suffix.lower() in (".xlsx", ".xls")
+        and not f.name.startswith("~$") and not f.name.startswith(".~")
+    ]
+    return str(max(excels, key=lambda f: f.stat().st_mtime)) if excels else None
 
 
 # ── 主入口 ────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="手推链接更新 — 一键完成 BI 下载 → 链接生成 → 部署 → 测试"
+        description="配置驱动的链接生成 + Netlify 部署 skill"
     )
-    parser.add_argument(
-        "--excel",
-        help="已有 Excel 文件路径（提供此参数可跳过 BI 下载步骤）",
-    )
-    parser.add_argument(
-        "--token",
-        help="Netlify Personal Access Token（部署必需）",
-    )
-    parser.add_argument(
-        "--site-id",
-        default=NETLIFY_SITE_ID,
-        help=f"Netlify Site ID (默认: {NETLIFY_SITE_ID})",
-    )
-    parser.add_argument(
-        "--skip-deploy",
-        action="store_true",
-        help="跳过部署，仅生成本地 index.html",
-    )
-    parser.add_argument(
-        "--skip-test",
-        action="store_true",
-        help="跳过部署后测试",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default=DEFAULT_OUTPUT_DIR,
-        help=f"Excel 和 HTML 输出目录 (默认: {DEFAULT_OUTPUT_DIR})",
-    )
-
+    parser.add_argument("config", help="YAML 配置文件路径")
+    parser.add_argument("--excel", help="跳过 BI 下载,使用已有 Excel")
+    parser.add_argument("--skip-deploy", action="store_true", help="跳过 Netlify 部署")
+    parser.add_argument("--skip-test", action="store_true", help="跳过部署后测试")
+    parser.add_argument("--output-dir", help="覆盖配置中的 output_dir")
     args = parser.parse_args()
 
-    start_time = time.time()
+    cfg = load_config(args.config)
+    output_dir = args.output_dir or cfg.get("output", {}).get("output_dir") or str(Path.home() / "Desktop")
+    output_dir = os.path.expanduser(output_dir)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # ── 步骤 1：获取 Excel ──
+    start = time.time()
+
     if args.excel:
-        excel_path = args.excel
+        excel_path = os.path.expanduser(args.excel)
         if not Path(excel_path).exists():
             print(f"[ERROR] 文件不存在: {excel_path}")
             sys.exit(1)
         print(f"[1/4] 使用已有 Excel: {excel_path}")
     else:
-        excel_path = download_excel(args.output_dir)
+        excel_path = download_excel(cfg, output_dir)
 
-    # ── 步骤 2：生成手推链接数据 ──
-    tsv_text, record_count = process_excel(excel_path)
+    tsv_text, count, data = process_excel(cfg, excel_path)
+    html_path = generate_html(cfg, tsv_text, output_dir)
 
-    # ── 步骤 3：生成部署页面 ──
-    html_path = generate_html(tsv_text)
-
-    elapsed = time.time() - start_time
-    print(f"\n{'─' * 50}")
+    print(f"\n{'─'*50}")
     print(f"数据统计:")
-    print(f"  学员总数: {record_count:,}")
+    print(f"  记录数: {count:,}")
     print(f"  页面大小: {html_path.stat().st_size:,} bytes")
-    print(f"  耗时: {elapsed:.0f}s")
+    print(f"  耗时: {time.time()-start:.0f}s")
 
-    # ── 步骤 4：部署 ──
-    token = args.token or DEFAULT_NETLIFY_TOKEN
     if args.skip_deploy:
         print(f"\n  跳过部署 (--skip-deploy)")
         print(f"  本地页面: {html_path}")
     else:
-        deployed_url = deploy_netlify(html_path, token, args.site_id)
-        deploy_elapsed = time.time() - start_time
-        print(f"\n{'─' * 50}")
+        deployed_url = deploy_netlify(cfg, html_path)
+        print(f"\n{'─'*50}")
         print(f"部署完成!")
         print(f"  页面地址: {deployed_url}")
-        print(f"  总耗时: {deploy_elapsed:.0f}s")
-
-        # ── 步骤 5：测试 ──
+        print(f"  总耗时: {time.time()-start:.0f}s")
         if not args.skip_test:
-            # 给 Netlify CDN 一点时间
             time.sleep(3)
-            test_deployment(deployed_url)
+            test_deployment(cfg, deployed_url)
 
-    # 保存处理后的 Excel（含手推链接列）供查阅
-    _save_processed_excel(excel_path)
-
-
-def _save_processed_excel(excel_path):
-    """保存一份带手推链接列的 Excel 到桌面供查阅"""
-    try:
-        header_row = None
-        df_raw = pd.read_excel(excel_path, header=None, dtype=str, nrows=20)
-        for i in range(len(df_raw)):
-            row_vals = [str(v).strip() for v in df_raw.iloc[i].tolist() if str(v) != "nan"]
-            if "数学学生id" in row_vals:
-                header_row = i
-                break
-
-        if header_row is None:
-            return
-
-        df = pd.read_excel(excel_path, header=header_row, dtype=str)
-        df.columns = [str(c).strip() for c in df.columns]
-
-        sid_col = "数学学生id"
-        if sid_col not in df.columns:
-            return
-
-        df = df[df[sid_col].notna() & df[sid_col].str.match(r"^\d+$")].copy()
-
-        uid_col = "平台用户ID"
-        region_col = "区域等级"
-
-        if uid_col not in df.columns or region_col not in df.columns:
-            return
-
-        def _make_link(row):
-            pid = TAIWAN_PID if str(row.get(region_col, "")) == "台湾" else DEFAULT_PID
-            return LINK_TEMPLATE.format(pid=pid, uid=row[uid_col])
-
-        df["手推链接"] = df.apply(_make_link, axis=1)
-
-        # 只保留关键列
-        keep_cols = [sid_col, uid_col, "微信昵称", "学员姓名", "lp姓名", "lp组别", region_col, "手推链接"]
-        available = [c for c in keep_cols if c in df.columns]
-        df_out = df[available].copy()
-
-        # 重命名
-        rename = {v: k for k, v in COLUMN_MAP.items()}
-        df_out.rename(columns={rename.get(c, c): c for c in df_out.columns}, inplace=True)
-
-        out_path = Path(DEFAULT_OUTPUT_DIR) / "手推链接_最新.xlsx"
-        df_out.to_excel(out_path, index=False)
-        print(f"  处理结果已保存: {out_path} ({len(df_out):,} 行)")
-    except Exception as e:
-        print(f"  ⚠️  保存处理结果失败: {e}")
+    save_processed_excel(cfg, data, output_dir)
 
 
 if __name__ == "__main__":

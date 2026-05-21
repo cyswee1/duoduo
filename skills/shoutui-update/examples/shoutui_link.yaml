@@ -1,0 +1,70 @@
+# 手推链接更新 — 完整配置范例
+# 还原原 shoutui-update skill 的所有行为
+
+name: shoutui_link
+description: 思维海外学员手推链接生成 + Netlify 部署
+
+# ── 数据源:从 BI 下载 Excel ───────────────────────────────────
+datasource:
+  bi_skill_path: "../bi_skill/bi_skill.py"   # 相对 update.py 的路径
+  report_name: "思维学员明细（学员维度）"
+  filters: "是否在读学员=全部"
+  timeout: 600                                # 秒
+
+# ── Excel 解析 ─────────────────────────────────────────────────
+parsing:
+  header_marker: "数学学生id"                  # 通过这个列名定位表头行
+  sid_field: "数学学生id"                      # 主键字段(从 column_map 的 key 中选一个)
+  sid_pattern: '^\d+$'                        # 有效 sid 的正则
+  max_header_scan_rows: 20                    # 最多扫前 N 行找表头
+
+# ── 字段映射:BI 列名 → 输出字段 ──────────────────────────────
+fields:
+  column_map:
+    数学学生id: sid
+    平台用户ID: uid
+    微信昵称: nick
+    lp姓名: lp
+    lp组别: group
+    学员姓名: student
+    区域等级: region
+  tsv_fields: [sid, uid, nick, student, lp, group, region]   # TSV 输出字段顺序
+  tsv_separator: "|"
+
+# ── 链接生成规则 ────────────────────────────────────────────────
+link_rules:
+  region_field: region                        # 用 region 字段做分流(注意是 column_map 的 value)
+  uid_field: 平台用户ID                        # uid 在 BI 列名(column_map 的 key)
+  branches:
+    - match: "台湾"
+      pid: "71181"
+      label: "台湾学员"
+  default:
+    pid: "4113"
+
+# ── HTML 生成 ──────────────────────────────────────────────────
+html:
+  template_path: "template.html"              # 相对 update.py 的路径
+  compress_level: 9                           # gzip 压缩级别 0-9
+  placeholders:
+    region_taiwan_value: "台湾"               # 模板中 region 字段的台湾值
+    taiwan_pid: "71181"
+    default_pid: "4113"
+    link_base_template: "https://your-promo-domain.example.com/popularize-{pid}.html?business_Type=invite&courseBelong=WANDOU&courseSubjectType=1&page_source=shoutui&popularizeId={pid}&invite_userID={uid}"
+
+# ── Netlify 部署 ────────────────────────────────────────────────
+deploy:
+  token: "${NETLIFY_TOKEN}"                   # 从环境变量读取
+  site_id: "${NETLIFY_SITE_ID}"
+  public_url: "${NETLIFY_URL}"                # 测试用的对外 URL
+  netlify_toml: |
+    [[headers]]
+      for = "/*"
+      [headers.values]
+        Content-Type = "text/html; charset=UTF-8"
+
+# ── 输出 ──────────────────────────────────────────────────────
+output:
+  output_dir: "~/Desktop"
+  save_processed_excel: true
+  processed_filename: "手推链接_最新.xlsx"
