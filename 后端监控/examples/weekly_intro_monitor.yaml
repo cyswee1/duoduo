@@ -1,0 +1,166 @@
+# weekly_intro_monitor 完整配置范例
+# 将团队、报表、字段、阈值、通知群等业务参数全部放在 YAML 中
+
+name: weekly_intro_monitor
+description: 示例业务监控 — 团队A/团队B
+
+# 凭证文件路径（包含 BI/钉钉 API 密钥）
+secrets_file: ~/.claude/secrets/intro_monitor.env
+
+# 调度规则
+schedule:
+  weekdays: [1, 2]  # 0=周一, 1=周二, 2=周三...
+
+# 团队配置
+teams:
+  团队A:
+    groups: [团队A-1组, 团队A-2组, 团队A-3组]
+    tl_map:
+      团队A-1组: {name: TL_A, userid: ""}
+      团队A-2组: {name: TL_B, userid: ""}
+      团队A-3组: {name: TL_C, userid: ""}
+    schedule:
+      phase1: "09:00"
+      phase1_deadline: "10:00"
+      phase2: "11:30"
+      phase3: "16:00"
+    chatid_key: DINGTALK_TEST_CHATID
+
+  团队B:
+    groups: [团队B-1组, 团队B-2组]
+    tl_map:
+      团队B-1组: {name: TL_D, userid: ""}
+      团队B-2组: {name: TL_E, userid: ""}
+    schedule:
+      phase1: "12:00"
+      phase1_deadline: "13:00"
+      phase2: "14:00"
+      phase3: "18:00"
+    chatid_key: DINGTALK_TEST_CHATID
+
+# 数据源配置
+datasources:
+  # Smartbi BI 报表
+  smartbi:
+    url_key: BI_URL
+    user_key: BI_USER
+    pass_key: BI_PASS
+    skill_dir_key: BI_SKILL_DIR  # 复用 bi_skill 的导出函数
+    reports:
+      progress:
+        name: "示例进度报表"
+        output_filename: "progress_monitor.xlsx"
+        date_filters: []
+        wait_after_open: 5
+      followup:
+        name: "示例跟进报表"
+        output_filename: "followup_monitor.xlsx"
+        date_filters:
+          - xpath: "YOUR_DATE_FILTER_XPATH"
+            value: "{this_monday}"
+        wait_after_filter: 60
+
+  # 钉钉多维表格（Notable）
+  notable:
+    base_id_key: DINGTALK_TABLE_ID
+    sheet_id_key: DINGTALK_TABLE_SHEET
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    my_userid_key: DINGTALK_MY_USERID
+    table_url_template: "https://alidocs.dingtalk.com/i/nodes/{base_id}?iframeQuery=viewId%3DYOUR_VIEW_ID%26sheetId%3D{sheet_id}"
+    team_prefixes:
+      团队A: [团队A]
+      团队B: [团队B]
+    fields:
+      group_name: "小组"
+      progress_target: "月度进度目标"
+      daily_target: "今日目标"
+      pools: "监控池子"
+      followup_target: "跟进目标"
+    pool_name_mapping:
+      "池子A": "池子A"
+      "池子B": "池子B"
+      "池子C": "池子C"
+
+# 阶段配置
+phases:
+  phase1:
+    type: registration_reminder
+    description: "负责人目标登记提醒"
+    datasource: notable
+    message_template: |
+      ### {team} 目标登记提醒
+
+      **未登记负责人**：{unregistered_tls}
+
+      请在 {deadline} 前完成登记：
+      [点击打开目标登记表]({table_url})
+
+  phase2:
+    type: progress_monitor
+    description: "进度监控"
+    datasource: smartbi.progress
+    notable_datasource: notable
+    excel_parsing:
+      header_rows: [3, 4]
+      columns:
+        team_group: ['团队/小组', '团队/小组']
+        lp: ['成员', '成员']
+        tl: ['负责人', '负责人']
+        today_count: ['今日完成情况', '今日完成数']
+        monthly_target: ['月度完成情况', '月度目标']
+        total_count: ['月度完成情况', '累计完成数']
+        today_target: ['今日完成情况', '今日目标']
+        monthly_completion_rate: ['月度完成情况', '月度达成率']
+    thresholds:
+      progress: 0.8
+    table_render:
+      title_template: "【进度监控 — {team}】"
+      headers: [小组, 负责人, 今日目标, 今日完成, 今日达标率, 月目标, 月完成, 月进度, GAP]
+      color_rules:
+        - column_index: 4
+          condition: "< 0.8"
+          color: red
+        - column_index: 8
+          condition: "> 0"
+          color: red
+
+  phase3:
+    type: pool_warning
+    description: "跟进预警"
+    datasource: smartbi.followup
+    pool_configs:
+      - name: "池子A"
+        column_offset: 22
+        target: 0.5
+      - name: "池子B"
+        column_offset: 50
+        target: 0.5
+      - name: "池子C"
+        column_offset: 112
+        target: 0.5
+    thresholds:
+      call_low: 0.5
+      min_call_with_zero_conversion: 10
+    table_render:
+      title_template: "【跟进预警 — {team}】"
+      headers: [小组, 池子, 实际跟进率, 目标, 状态]
+      color_rules:
+        - column_index: 2
+          condition: "status == '未达标'"
+          color: red
+        - column_index: 4
+          condition: "status == '未达标'"
+          color: red
+
+# 通知器配置
+notifier:
+  type: dingtalk_robot
+  robot_code_key: DINGTALK_ROBOT_CODE
+  app_key: DINGTALK_APP_KEY
+  app_secret_key: DINGTALK_APP_SECRET
+
+# 全局参数
+globals:
+  output_dir: ~/Downloads
+  target_pools: ["池子A", "池子B", "池子C"]
