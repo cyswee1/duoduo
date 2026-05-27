@@ -30,7 +30,7 @@ class NotableDataSource:
         """读取指定团队的目标登记
 
         Args:
-            team: 团队名（如 '美澳' / '港澳'）
+            team: 团队名（如 '团队A' / '团队B'）
 
         Returns:
             dict: {小组名: {字段: 值}}
@@ -65,42 +65,36 @@ class NotableDataSource:
             if not group_name:
                 continue
 
-            # 根据 team 筛选
-            if team == "美澳" and not group_name.startswith("美澳"):
-                continue
-            if team == "港澳" and not (group_name.startswith("港澳") or group_name.startswith("台湾")):
+            team_prefixes = self.config.get("team_prefixes", {}).get(team, [team])
+            if not any(str(group_name).startswith(prefix) for prefix in team_prefixes):
                 continue
 
             target = {}
 
-            # 转介绍例子进度目标
             progress_str = fields.get(self.fields["progress_target"], "")
             if progress_str:
                 try:
-                    target["小组进度目标"] = float(progress_str)
+                    target["progress_target"] = float(progress_str)
                 except ValueError:
                     pass
 
-            # 今日例子目标
             daily_str = fields.get(self.fields["daily_target"], "")
             if daily_str:
                 try:
-                    target["小组例子目标"] = int(daily_str)
+                    target["daily_target"] = int(daily_str)
                 except ValueError:
                     pass
 
-            # 跟进池子（多选字段）
             pools_raw = fields.get(self.fields["pools"], [])
             if pools_raw:
                 pool_names = [p["name"] for p in pools_raw if isinstance(p, dict) and "name" in p]
                 mapped = [self.pool_mapping.get(name, name) for name in pool_names]
-                target["跟进池子"] = mapped
+                target["pools"] = mapped
 
-            # 外呼跟进目标
             followup_str = fields.get(self.fields["followup_target"], "")
             if followup_str:
                 try:
-                    target["外呼跟进目标"] = float(followup_str)
+                    target["followup_target"] = float(followup_str)
                 except ValueError:
                     pass
 

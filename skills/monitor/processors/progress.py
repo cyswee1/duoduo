@@ -61,8 +61,8 @@ class ProgressProcessor:
 
             # 从 Notable 读取目标
             target_data = notable_targets.get(group, {})
-            today_target = target_data.get("小组例子目标", 0)
-            monthly_target_rate = target_data.get("小组进度目标", 0)
+            today_target = target_data.get("daily_target", 0)
+            monthly_target_rate = target_data.get("progress_target", 0)
 
             # 计算月目标（基于当前总数和目标进度）
             if monthly_target_rate > 0:

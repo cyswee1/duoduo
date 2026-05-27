@@ -31,7 +31,7 @@ class FollowupProcessor:
 
         for group in team_config["groups"]:
             target_data = notable_targets.get(group, {})
-            monitored_pools = target_data.get("跟进池子", [])
+            monitored_pools = target_data.get("pools", [])
             if not monitored_pools:
                 continue
 

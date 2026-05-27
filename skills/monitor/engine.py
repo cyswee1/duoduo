@@ -39,7 +39,7 @@ class MonitorEngine:
         """运行指定团队的指定阶段
 
         Args:
-            team: 团队名（如 '美澳' / '港澳'）
+            team: 团队名（如 '团队A' / '团队B'）
             phase_name: 阶段名（如 'phase1' / 'phase2' / 'phase3'）
         """
         team_cfg = self.config["teams"][team]
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) < 4:
         print("用法: python engine.py <config.yaml> <team> <phase>")
-        print("示例: python engine.py examples/weekly_intro_monitor.yaml 美澳 phase2")
+        print("示例: python engine.py examples/weekly_intro_monitor.yaml 团队A phase2")
         sys.exit(1)
 
     config_path = sys.argv[1]
