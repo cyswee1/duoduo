@@ -268,4 +268,5 @@ elif phase_type == "my_custom_phase":
 ## 文档
 
 - [SKILL.md](SKILL.md) — 完整功能说明
+- [docs/workflow.md](docs/workflow.md) — 工作流梳理
 - [examples/weekly_intro_monitor.yaml](examples/weekly_intro_monitor.yaml) — 完整配置范例

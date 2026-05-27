@@ -36,6 +36,8 @@
     └── weekly_intro_monitor.yaml
 ```
 
+详细工作流见 [docs/workflow.md](docs/workflow.md)。
+
 ---
 
 ## 快速开始
