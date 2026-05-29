@@ -1,0 +1,217 @@
+# 自动生成 — 源自 scenarios/registry.yaml [service]
+# 运行: python engine.py generated/service_monitor.yaml <team> <phase>
+
+name: service_monitor
+description: 服务指标监控
+secrets_file: ~/.claude/secrets/intro_monitor.env
+teams:
+  美澳:
+    groups:
+    - 美澳1组
+    - 美澳2组
+    - 美澳3组
+    - 美澳4组
+    - 美澳5组
+    tl_map:
+      美澳1组:
+        name: 刘洋
+        userid: '1625453324939147'
+      美澳2组:
+        name: 沙明亮
+        userid: 015242135027546809
+      美澳3组:
+        name: 邵婷婷
+        userid: '312563346936341333'
+      美澳4组:
+        name: 万爽
+        userid: '2843455829648470'
+      美澳5组:
+        name: 毕金玲
+        userid: '205567305527715222'
+    chatid_key: DINGTALK_TEST_CHATID
+    webhook_key: DINGTALK_XUEGUAN_WEBHOOK
+    schedule:
+      phase1: 09:00
+      phase1_deadline: '10:00'
+      phase2: '15:00'
+  港澳:
+    groups:
+    - 港澳1组
+    - 港澳2组
+    - 港澳组
+    tl_map:
+      港澳1组:
+        name: 叶素姜
+        userid: '201906436621671730'
+        mobile: '15814538521'
+      港澳2组:
+        name: 向梦清
+        userid: '210106211121540336'
+        mobile: '15840663958'
+      港澳组:
+        name: 谢昌馥
+        userid: 01041467286935324091
+        mobile: '17741187165'
+    chatid_key: DINGTALK_GANGAO_CHATID
+    webhook_key: DINGTALK_XUEGUAN_WEBHOOK
+    schedule:
+      phase1: '12:00'
+      phase1_deadline: '13:00'
+      phase2: '17:00'
+datasources:
+  smartbi:
+    url_key: BI_URL
+    user_key: BI_USER
+    pass_key: BI_PASS
+    reports:
+      first_call:
+        name: 益智海外新生首通监控
+        output_filename: 首通监控.xlsx
+        date_filters: []
+        wait_after_open: 5
+      first_lesson_stats:
+        name: 海外思维学管服务指标统计表
+        output_filename: 首课统计_监控.xlsx
+        end_date_offset_hours: -48
+        date_filters: []
+        wait_after_open: 5
+      first_specialist_stats:
+        name: 海外思维学管服务指标统计表
+        output_filename: 首专统计_监控.xlsx
+        end_date_offset_hours: -72
+        date_filters: []
+        wait_after_open: 5
+      followup:
+        name: 思维转介绍过程跟进报表_末次渠道
+        output_filename: 服务池跟进_监控.xlsx
+        date_filters:
+        - input_index: 0
+          value: '{this_monday}'
+        wait_after_filter: 60
+  dingtalk_report:
+    type: dingtalk_report
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    template_name: 海外益智团队日志
+    team_user_map:
+      美澳:
+        美澳1组: '1625453324939147'
+        美澳2组: 015242135027546809
+        美澳3组: '312563346936341333'
+        美澳4组: '2843455829648470'
+        美澳5组: '205567305527715222'
+      港澳:
+        港澳1组: '201906436621671730'
+        港澳2组: '210106211121540336'
+        港澳组: 01041467286935324091
+    fields:
+      first_call_target: 月度首通及时跟进目标
+      first_lesson_target: 月度首课及时跟进目标
+      first_specialist_target: 月度首专及时跟进目标
+      service_pool_followup_target: 服务池外呼跟进率目标
+      service_pool_effective_target: 服务池综合有效跟进率目标
+    section_priority:
+    - 服务明日目标
+  notable:
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    base_id: MNDoBb60VLrMRmMMtBrGgBZm8lemrZQ3
+    operator_userid_key: DINGTALK_MY_USERID
+    table_url: https://alidocs.dingtalk.com/i/nodes/MNDoBb60VLrMRmMMtBrGgBZm8lemrZQ3
+phases:
+  phase1:
+    type: registration_reminder
+    description: TL 日志提交提醒（服务目标）
+    message_template: '### 📋 {team} 服务目标提醒
+
+      **未提交日志 TL**：{unregistered_tls}
+
+      请在 {deadline} 前提交今日服务目标日志
+
+      '
+  phase2:
+    type: service_monitor
+    description: 服务指标预警
+    excel_parsing:
+      first_call:
+        header_rows: null
+        data_start_row: 3
+        group_col_index: 1
+        first_call_rate_col_index: 20
+      first_lesson_stats:
+        header_rows:
+        - 1
+        columns:
+          team_group:
+          - 团队
+          first_lesson_rate:
+          - 首课及时跟进率
+      first_specialist_stats:
+        header_rows:
+        - 1
+        columns:
+          team_group:
+          - 团队
+          first_specialist_rate:
+          - 首专及时跟进率
+      followup:
+        header_rows:
+        - 3
+        - 4
+        columns:
+          team_group:
+          - 团队/小组
+          - 团队/小组
+          tl:
+          - 负责人
+          - 负责人
+          service_pool_followup_rate:
+          - 服务池
+          - 外呼跟进率
+          service_pool_effective_rate:
+          - 服务池
+          - 综合有效跟进率
+    thresholds:
+      first_call_rate: 0.8
+      first_lesson_rate: 0.8
+      first_specialist_rate: 0.8
+      service_pool_followup_rate: 0.6
+      service_pool_effective_rate: 0.6
+    table_render:
+      title_template: 【服务指标预警 — {team}团队】
+      headers:
+      - 小组
+      - TL
+      - 首通目标
+      - 首通跟进率
+      - 首课目标
+      - 首课跟进率
+      - 首专目标
+      - 首专跟进率
+      - 服务池跟进目标
+      - 服务池跟进率
+      - 有效跟进目标
+      - 有效跟进率
+      color_rules:
+      - column_index: 3
+        condition: < target
+        color: red
+      - column_index: 5
+        condition: < target
+        color: red
+      - column_index: 7
+        condition: < target
+        color: red
+      - column_index: 9
+        condition: < target
+        color: red
+      - column_index: 11
+        condition: < target
+        color: red
+notifier:
+  type: dingtalk_robot
+  robot_code_key: DINGTALK_ROBOT_CODE
+  app_key: DINGTALK_APP_KEY
+  app_secret_key: DINGTALK_APP_SECRET
+globals:
+  output_dir: ~/Downloads
