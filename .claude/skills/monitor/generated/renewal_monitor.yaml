@@ -1,0 +1,212 @@
+# 自动生成 — 源自 scenarios/registry.yaml [renewal]
+# 运行: python engine.py generated/renewal_monitor.yaml <team> <phase>
+
+name: renewal_monitor
+description: 续费业绩监控
+secrets_file: ~/.claude/secrets/intro_monitor.env
+teams:
+  美澳:
+    groups:
+    - 美澳1组
+    - 美澳2组
+    - 美澳3组
+    - 美澳4组
+    - 美澳5组
+    tl_map:
+      美澳1组:
+        name: 刘洋
+        userid: '1625453324939147'
+        mobile: '15754047099'
+      美澳2组:
+        name: 沙明亮
+        userid: 015242135027546809
+        mobile: '15304040562'
+      美澳3组:
+        name: 邵婷婷
+        userid: '312563346936341333'
+        mobile: '17640334072'
+      美澳4组:
+        name: 万爽
+        userid: '2843455829648470'
+        mobile: '15731657798'
+      美澳5组:
+        name: 毕金玲
+        userid: '205567305527715222'
+        mobile: '15309828628'
+    chatid_key: DINGTALK_TEST_CHATID
+    webhook_key: DINGTALK_XUEGUAN_WEBHOOK
+    schedule:
+      phase1: 09:00
+      phase1_deadline: '10:00'
+      phase2: '14:00'
+  港澳:
+    groups:
+    - 港澳1组
+    - 港澳2组
+    - 港澳组
+    tl_map:
+      港澳1组:
+        name: 叶素姜
+        userid: '201906436621671730'
+        mobile: '15814538521'
+      港澳2组:
+        name: 向梦清
+        userid: '210106211121540336'
+        mobile: '15840663958'
+      港澳组:
+        name: 谢昌馥
+        userid: 01041467286935324091
+        mobile: '17741187165'
+    chatid_key: DINGTALK_GANGAO_CHATID
+    webhook_key: DINGTALK_XUEGUAN_WEBHOOK
+    schedule:
+      phase1: '12:00'
+      phase1_deadline: '13:00'
+      phase2: '16:00'
+datasources:
+  smartbi:
+    url_key: BI_URL
+    user_key: BI_USER
+    pass_key: BI_PASS
+    reports:
+      daily_call:
+        name: 海外思维LP每日外呼跟进V2
+        output_filename: 续费外呼_监控.xlsx
+        date_filters: []
+        wait_after_open: 5
+      pool_followup:
+        name: 思维目标池未续跟进情况
+        output_filename: 续费池跟进_监控.xlsx
+        date_filters: []
+        wait_after_open: 5
+      pool_followup_rate:
+        name: 思维目标池未续跟进_统合
+        output_filename: 续费池跟进率_监控.xlsx
+        date_filters: []
+        wait_after_open: 5
+  dingtalk_report:
+    type: dingtalk_report
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    template_name: 海外益智团队日志
+    team_user_map:
+      美澳:
+        美澳1组: '1625453324939147'
+        美澳2组: 015242135027546809
+        美澳3组: '312563346936341333'
+        美澳4组: '2843455829648470'
+        美澳5组: '205567305527715222'
+      港澳:
+        港澳1组: '201906436621671730'
+        港澳2组: '210106211121540336'
+        港澳组: 01041467286935324091
+    fields:
+      renewal_target: 续费目标
+      call_duration_target: 通时目标
+      call_count_target: 通次目标
+      followup_target: 外呼跟进目标
+    section_priority:
+    - 续费明日目标
+  notable:
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    base_id: MNDoBb60VLrMRmMMtBrGgBZm8lemrZQ3
+    operator_userid_key: DINGTALK_MY_USERID
+    table_url: https://alidocs.dingtalk.com/i/nodes/MNDoBb60VLrMRmMMtBrGgBZm8lemrZQ3
+phases:
+  phase1:
+    type: registration_reminder
+    description: TL 日志提交提醒（续费目标）
+    message_template: '### 📋 {team} 续费目标提醒
+
+      **未提交日志 TL**：{unregistered_tls}
+
+      请在 {deadline} 前提交今日续费目标日志
+
+      '
+  phase2:
+    type: renewal_monitor
+    description: 续费业绩预警
+    excel_parsing:
+      daily_call:
+        header_rows:
+        - 3
+        - 4
+        columns:
+          team_group:
+          - 团队/小组
+          - 团队/小组
+          tl:
+          - 负责人
+          - 负责人
+          renewal_gmv:
+          - 续费GMV
+          - 续费GMV
+          call_duration:
+          - 总有效通话时长
+          - 总有效通话时长
+          call_count:
+          - 总拨打次数
+          - 总拨打次数
+      pool_followup:
+        header_rows:
+        - 3
+        - 4
+        columns:
+          team_group:
+          - 团队/小组
+          - 团队/小组
+          tl:
+          - 负责人
+          - 负责人
+          followup_rate:
+          - 外呼跟进率
+          - 外呼跟进率
+      pool_followup_rate:
+        header_rows:
+        - 3
+        - 4
+        columns:
+          team_group:
+          - 团队/小组
+          - 团队/小组
+          tl:
+          - 负责人
+          - 负责人
+          followup_rate:
+          - 外呼跟进率
+          - 外呼跟进率
+    alert_rules:
+    - name: 低活跃预警
+      condition: renewal_gmv == 0 and call_duration < call_duration_target * 0.6 and
+        call_count < call_count_target * 0.6
+    - name: 低跟进预警
+      condition: renewal_gmv == 0 and followup_rate < followup_target * 0.6
+    table_render:
+      title_template: 【续费业绩预警 — {team}团队】
+      headers:
+      - 小组
+      - TL
+      - 今日续费目标
+      - 今日续费GMV
+      - 今日通时目标
+      - 今日通时
+      - 今日通次目标
+      - 今日通次
+      - 外呼跟进目标
+      - 外呼跟进率
+      - 外呼跟进率GAP
+      color_rules:
+      - column_index: 3
+        condition: == 0
+        color: red
+      - column_index: 10
+        condition: '> 0'
+        color: red
+notifier:
+  type: dingtalk_robot
+  robot_code_key: DINGTALK_ROBOT_CODE
+  app_key: DINGTALK_APP_KEY
+  app_secret_key: DINGTALK_APP_SECRET
+globals:
+  output_dir: ~/Downloads

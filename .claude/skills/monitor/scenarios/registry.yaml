@@ -1,0 +1,387 @@
+# 监控场景注册表 — 所有场景的参数集中定义
+# 运行 `python generator.py` 可根据此文件生成各场景的可运行配置
+
+# ============================================================
+# 共享配置（所有场景继承）
+# ============================================================
+shared:
+  secrets_file: ~/.claude/secrets/intro_monitor.env
+
+  teams:
+    美澳:
+      groups: [美澳1组, 美澳2组, 美澳3组, 美澳4组, 美澳5组]
+      tl_map:
+        美澳1组: {name: 刘洋, userid: "1625453324939147"}
+        美澳2组: {name: 沙明亮, userid: "015242135027546809"}
+        美澳3组: {name: 邵婷婷, userid: "312563346936341333"}
+        美澳4组: {name: 万爽, userid: "2843455829648470"}
+        美澳5组: {name: 毕金玲, userid: "205567305527715222"}
+      chatid_key: DINGTALK_TEST_CHATID
+
+    港澳:
+      groups: [港澳1组, 港澳2组, 港澳组, 台湾组]
+      tl_map:
+        港澳1组: {name: 叶素姜, userid: "201906436621671730"}
+        港澳2组: {name: 向梦清, userid: "210106211121540336"}
+        港澳组: {name: 谢昌馥, userid: "01041467286935324091"}
+        台湾组: {name: 李文韬, userid: "105716696026259219"}
+      chatid_key: DINGTALK_TEST_CHATID
+
+  notifier:
+    type: dingtalk_robot
+    robot_code_key: DINGTALK_ROBOT_CODE
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+
+  target_source:
+    type: dingtalk_report
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    template_name: "海外益智团队日志"
+    team_user_map:
+      美澳:
+        美澳1组: "1625453324939147"
+        美澳2组: "015242135027546809"
+        美澳3组: "312563346936341333"
+        美澳4组: "2843455829648470"
+        美澳5组: "205567305527715222"
+      港澳:
+        港澳1组: "201906436621671730"
+        港澳2组: "210106211121540336"
+        港澳组: "01041467286935324091"
+        台湾组: "105716696026259219"
+
+  smartbi:
+    url_key: BI_URL
+    user_key: BI_USER
+    pass_key: BI_PASS
+
+  notable:
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    base_id: MNDoBb60VLrMRmMMtBrGgBZm8lemrZQ3
+    operator_userid_key: DINGTALK_MY_USERID
+    table_url: "https://alidocs.dingtalk.com/i/nodes/MNDoBb60VLrMRmMMtBrGgBZm8lemrZQ3"
+
+  globals:
+    output_dir: ~/Downloads
+
+# ============================================================
+# 场景定义
+# ============================================================
+scenarios:
+
+  # ----------------------------------------------------------
+  # 转介绍监控
+  # ----------------------------------------------------------
+  intro:
+    name: intro_monitor
+    description: "转介绍业绩监控"
+
+    reports:
+      progress:
+        name: "转介绍益智业绩播报_LP维度_末次渠道"
+        output_filename: "业绩播报_监控.xlsx"
+        date_filters: []
+        wait_after_open: 5
+      followup:
+        name: "思维转介绍过程跟进报表_末次渠道"
+        output_filename: "转介绍外呼跟进_监控.xlsx"
+        date_filters:
+          - input_index: 0
+            value: "{this_monday}"
+        wait_after_filter: 60
+
+    target_fields:
+      daily_target: "今日例子目标"
+      progress_target: "转介绍例子进度目标"
+      pools: "跟进池子"
+      followup_target: "转介绍外呼跟进目标"
+    section_priority: ["转介绍明日目标"]
+    pool_name_mapping:
+      "M1-M3": "M1-M3（首消）"
+      "续费带R": "续费带R"
+      "服务池": "服务池"
+
+    schedule:
+      美澳:
+        "09:00": target_confirm
+        "11:30": progress      # phase2 only
+        "14:30": monitor       # phase2 + phase3（转介绍），phase2 only（续费/服务）
+        "17:00": monitor
+      港澳:
+        "12:00": target_confirm
+        "14:00": monitor
+        "17:30": monitor
+        "19:00": monitor
+      clear: "23:00"
+
+    phases:
+      phase1:
+        type: registration_reminder
+        description: "TL 日志提交提醒"
+        message_template: |
+          ### 📋 {team} 转介绍目标提醒
+          **未提交日志 TL**：{unregistered_tls}
+          请在 {deadline} 前提交今日目标日志
+
+      phase2:
+        type: progress_monitor
+        description: "转介绍业绩进度监控"
+        datasource: smartbi.progress
+        excel_parsing:
+          header_rows: [3, 4]
+          columns:
+            team_group: ['团队/小组', 'Unnamed: 2_level_1']
+            lp: ['LP', 'Unnamed: 3_level_1']
+            tl: ['负责人', 'Unnamed: 4_level_1']
+            today_count: ['今日完成情况', '今日例子数']
+            monthly_target: ['海外转介绍例子数据', '海外转介绍例子目标']
+            total_count: ['海外转介绍例子数据', '全体带海外例子数']
+            today_target: ['今日完成情况', '今日例子目标']
+            monthly_completion_rate: ['海外转介绍例子数据', '例子达成率-月度']
+        thresholds:
+          progress: 0.8
+        table_render:
+          title_template: "【转介绍业绩进度监控 — {team}团队】"
+          headers: [小组, TL, 今日目标, 今日例子, 今日达标率, 月目标, 月例子, 月进度, GAP]
+          color_rules:
+            - column_index: 4
+              condition: "< 0.8"
+              color: red
+            - column_index: 8
+              condition: "> 0"
+              color: red
+
+      phase3:
+        type: pool_warning
+        description: "转介绍外呼跟进预警"
+        datasource: smartbi.followup
+        pool_configs:
+          - name: "续费带R"
+            column_offset: 22
+            target: 0.5
+          - name: "M1-M3（首消）"
+            column_offset: 50
+            target: 0.5
+          - name: "服务池"
+            column_offset: 112
+            target: 0.5
+        thresholds:
+          call_low: 0.5
+          min_call_with_zero_conversion: 10
+        table_render:
+          title_template: "【转介绍外呼跟进监控 — {team}团队】"
+          headers: [小组, 池子, 实际跟进率, 目标, 状态]
+          color_rules:
+            - column_index: 2
+              condition: "status == '未达标'"
+              color: red
+            - column_index: 4
+              condition: "status == '未达标'"
+              color: red
+
+  # ----------------------------------------------------------
+  # 续费监控
+  # ----------------------------------------------------------
+  renewal:
+    name: renewal_monitor
+    description: "续费业绩监控"
+
+    reports:
+      daily_call:
+        name: "海外思维LP每日外呼跟进V2"
+        output_filename: "续费外呼_监控.xlsx"
+        date_filters: []
+        wait_after_open: 5
+      pool_followup:
+        name: "思维目标池未续跟进情况"
+        output_filename: "续费池跟进_监控.xlsx"
+        date_filters: []
+        wait_after_open: 5
+      pool_followup_rate:
+        name: "思维目标池未续跟进_统合"
+        output_filename: "续费池跟进率_监控.xlsx"
+        date_filters: []
+        wait_after_open: 5
+
+    target_fields:
+      renewal_target: "续费目标"
+      call_duration_target: "通时目标"
+      call_count_target: "通次目标"
+      followup_target: "外呼跟进目标"
+    section_priority: ["续费明日目标"]
+
+    schedule:
+      美澳:
+        "09:00": target_confirm
+        "11:30": progress      # phase2 only（转介绍/续费/服务，按当日节奏规划）
+        "14:30": monitor       # phase2+phase3（转介绍），phase2（续费/服务）
+        "17:00": monitor
+      港澳:
+        "12:00": target_confirm
+        "14:00": monitor
+        "17:30": monitor
+        "19:00": monitor
+      clear: "23:00"
+
+    phases:
+      phase1:
+        type: registration_reminder
+        description: "TL 日志提交提醒（续费目标）"
+        message_template: |
+          ### 📋 {team} 续费目标提醒
+          **未提交日志 TL**：{unregistered_tls}
+          请在 {deadline} 前提交今日续费目标日志
+
+      phase2:
+        type: renewal_monitor
+        description: "续费业绩预警"
+        excel_parsing:
+          daily_call:
+            header_rows: [3, 4]
+            columns:
+              team_group: ['团队/小组', '团队/小组']
+              tl: ['负责人', '负责人']
+              renewal_gmv: ['续费GMV', '续费GMV']
+              call_duration: ['总有效通话时长', '总有效通话时长']
+              call_count: ['总拨打次数', '总拨打次数']
+          pool_followup_rate:
+            header_rows: [3, 4]
+            columns:
+              team_group: ['团队/小组', '团队/小组']
+              tl: ['负责人', '负责人']
+              followup_rate: ['外呼跟进率', '外呼跟进率']
+        alert_rules:
+          - name: "低活跃预警"
+            condition: "renewal_gmv == 0 and call_duration < call_duration_target * 0.6 and call_count < call_count_target * 0.6"
+          - name: "低跟进预警"
+            condition: "renewal_gmv == 0 and followup_rate < followup_target * 0.6"
+        table_render:
+          title_template: "【续费业绩预警 — {team}团队】"
+          headers: [小组, TL, 今日续费目标, 今日续费GMV, 今日通时目标, 今日通时, 今日通次目标, 今日通次, 外呼跟进目标, 外呼跟进率, 外呼跟进率GAP]
+          color_rules:
+            - column_index: 3
+              condition: "== 0"
+              color: red
+            - column_index: 10
+              condition: "> 0"
+              color: red
+
+  # ----------------------------------------------------------
+  # 服务监控
+  # ----------------------------------------------------------
+  service:
+    name: service_monitor
+    description: "服务指标监控"
+
+    reports:
+      first_call:
+        name: "益智海外新生首通监控"
+        output_filename: "首通监控.xlsx"
+        date_filters: []
+        wait_after_open: 5
+      first_lesson_stats:
+        name: "海外思维学管服务指标统计表"
+        output_filename: "首课统计_监控.xlsx"
+        # 结束时间 = 播报当天 - 48h
+        end_date_offset_hours: -48
+        date_filters: []
+        wait_after_open: 5
+      first_specialist_stats:
+        name: "海外思维学管服务指标统计表"
+        output_filename: "首专统计_监控.xlsx"
+        # 结束时间 = 播报当天 - 72h
+        end_date_offset_hours: -72
+        date_filters: []
+        wait_after_open: 5
+      followup:
+        name: "思维转介绍过程跟进报表_末次渠道"
+        output_filename: "服务池跟进_监控.xlsx"
+        date_filters:
+          - input_index: 0
+            value: "{this_monday}"
+        wait_after_filter: 60
+
+    target_fields:
+      first_call_target: "月度首通及时跟进目标"
+      first_lesson_target: "月度首课及时跟进目标"
+      first_specialist_target: "月度首专及时跟进目标"
+      service_pool_followup_target: "服务池外呼跟进率目标"
+      service_pool_effective_target: "服务池综合有效跟进率目标"
+    section_priority: ["服务明日目标"]
+
+    schedule:
+      美澳:
+        "09:00": target_confirm
+        "11:30": progress      # phase2 only（转介绍/续费/服务，按当日节奏规划）
+        "14:30": monitor       # phase2+phase3（转介绍），phase2（续费/服务）
+        "17:00": monitor
+      港澳:
+        "12:00": target_confirm
+        "14:00": monitor
+        "17:30": monitor
+        "19:00": monitor
+      clear: "23:00"
+
+    phases:
+      phase1:
+        type: registration_reminder
+        description: "TL 日志提交提醒（服务目标）"
+        message_template: |
+          ### 📋 {team} 服务目标提醒
+          **未提交日志 TL**：{unregistered_tls}
+          请在 {deadline} 前提交今日服务目标日志
+
+      phase2:
+        type: service_monitor
+        description: "服务指标预警"
+        excel_parsing:
+          first_call:
+            # header=None，data_start_row=3，用列索引访问
+            header_rows: null
+            data_start_row: 3
+            group_col_index: 1
+            first_call_rate_col_index: 20
+          first_lesson_stats:
+            header_rows: [1]
+            columns:
+              team_group: ['团队']
+              first_lesson_rate: ['首课及时跟进率']
+          first_specialist_stats:
+            header_rows: [1]
+            columns:
+              team_group: ['团队']
+              first_specialist_rate: ['首专及时跟进率']
+          followup:
+            header_rows: [3, 4]
+            columns:
+              team_group: ['团队/小组', '团队/小组']
+              tl: ['负责人', '负责人']
+              service_pool_followup_rate: ['服务池', '外呼跟进率']
+              service_pool_effective_rate: ['服务池', '综合有效跟进率']
+        thresholds:
+          first_call_rate: 0.8
+          first_lesson_rate: 0.8
+          first_specialist_rate: 0.8
+          service_pool_followup_rate: 0.6
+          service_pool_effective_rate: 0.6
+        table_render:
+          title_template: "【服务指标预警 — {team}团队】"
+          headers: [小组, TL, 首通目标, 首通跟进率, 首课目标, 首课跟进率, 首专目标, 首专跟进率, 服务池跟进目标, 服务池跟进率, 有效跟进目标, 有效跟进率]
+          color_rules:
+            - column_index: 3
+              condition: "< target"
+              color: red
+            - column_index: 5
+              condition: "< target"
+              color: red
+            - column_index: 7
+              condition: "< target"
+              color: red
+            - column_index: 9
+              condition: "< target"
+              color: red
+            - column_index: 11
+              condition: "< target"
+              color: red

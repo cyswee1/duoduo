@@ -1,0 +1,175 @@
+name: monitor-schedule
+
+'on':
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Manual command selector"
+        required: true
+        default: macau-target-confirm
+        type: choice
+        options:
+          - macau-target-confirm
+          - hk-target-confirm
+          - macau-intro-phase2
+          - macau-renewal-phase2
+          - macau-service-phase2
+          - hk-intro-phase2
+          - hk-renewal-phase2
+          - hk-service-phase2
+  schedule:
+    - cron: "0 1 * * *"
+    - cron: "0 4 * * *"
+    - cron: "30 3 * * *"
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+    - cron: "0 8 * * *"
+    - cron: "0 9 * * *"
+
+concurrency:
+  group: monitor-schedule
+  cancel-in-progress: false
+
+jobs:
+  run-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TZ: Asia/Shanghai
+      MONITOR_SECRETS_FILE: ${{ github.workspace }}/runtime/intro_monitor.env
+      MONITOR_OUTPUT_DIR: ${{ github.workspace }}/runtime/downloads
+      MONITOR_SMARTBI_HEADLESS: "true"
+      BI_URL: ${{ secrets.BI_URL }}
+      BI_USER: ${{ secrets.BI_USER }}
+      BI_PASS: ${{ secrets.BI_PASS }}
+      DINGTALK_APP_KEY: ${{ secrets.DINGTALK_APP_KEY }}
+      DINGTALK_APP_SECRET: ${{ secrets.DINGTALK_APP_SECRET }}
+      DINGTALK_ROBOT_CODE: ${{ secrets.DINGTALK_ROBOT_CODE }}
+      DINGTALK_MY_USERID: ${{ secrets.DINGTALK_MY_USERID }}
+      DINGTALK_TEST_CHATID: ${{ secrets.DINGTALK_TEST_CHATID }}
+      DINGTALK_GANGAO_CHATID: ${{ secrets.DINGTALK_GANGAO_CHATID }}
+      DINGTALK_XUEGUAN_WEBHOOK: ${{ secrets.DINGTALK_XUEGUAN_WEBHOOK }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl requests matplotlib pyyaml playwright
+
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Prepare runtime directories
+        run: |
+          mkdir -p "$MONITOR_OUTPUT_DIR"
+          mkdir -p "$(dirname "$MONITOR_SECRETS_FILE")"
+
+      - name: Write secrets env file
+        run: |
+          cat > "$MONITOR_SECRETS_FILE" <<EOF
+          BI_URL=${BI_URL}
+          BI_USER=${BI_USER}
+          BI_PASS=${BI_PASS}
+          DINGTALK_APP_KEY=${DINGTALK_APP_KEY}
+          DINGTALK_APP_SECRET=${DINGTALK_APP_SECRET}
+          DINGTALK_ROBOT_CODE=${DINGTALK_ROBOT_CODE}
+          DINGTALK_MY_USERID=${DINGTALK_MY_USERID}
+          DINGTALK_TEST_CHATID=${DINGTALK_TEST_CHATID}
+          DINGTALK_GANGAO_CHATID=${DINGTALK_GANGAO_CHATID}
+          DINGTALK_XUEGUAN_WEBHOOK=${DINGTALK_XUEGUAN_WEBHOOK}
+          EOF
+
+      - name: Run scheduled or manual task
+        working-directory: .claude/skills/monitor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_task() {
+            case "$1" in
+              macau-target-confirm)
+                python3 dispatch.py 美澳 target_confirm
+                ;;
+              hk-target-confirm)
+                python3 dispatch.py 港澳 target_confirm
+                ;;
+              macau-intro-phase2)
+                python3 engine.py generated/intro_monitor.yaml 美澳 phase2
+                ;;
+              macau-renewal-phase2)
+                python3 engine.py generated/renewal_monitor.yaml 美澳 phase2
+                ;;
+              macau-service-phase2)
+                python3 engine.py generated/service_monitor.yaml 美澳 phase2
+                ;;
+              hk-intro-phase2)
+                python3 engine.py generated/intro_monitor.yaml 港澳 phase2
+                ;;
+              hk-renewal-phase2)
+                python3 engine.py generated/renewal_monitor.yaml 港澳 phase2
+                ;;
+              hk-service-phase2)
+                python3 engine.py generated/service_monitor.yaml 港澳 phase2
+                ;;
+              *)
+                echo "Unknown task: $1"
+                exit 1
+                ;;
+            esac
+          }
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run_task "${{ inputs.task }}"
+            exit 0
+          fi
+
+          case "${{ github.event.schedule }}" in
+            "0 1 * * *")
+              run_task macau-target-confirm
+              ;;
+            "0 4 * * *")
+              run_task hk-target-confirm
+              ;;
+            "30 3 * * *")
+              run_task macau-intro-phase2
+              ;;
+            "0 6 * * *")
+              run_task macau-renewal-phase2
+              run_task hk-intro-phase2
+              ;;
+            "0 7 * * *")
+              run_task macau-service-phase2
+              ;;
+            "0 8 * * *")
+              run_task hk-renewal-phase2
+              ;;
+            "0 9 * * *")
+              run_task hk-service-phase2
+              ;;
+            *)
+              echo "Unknown schedule: ${{ github.event.schedule }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Upload runtime artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-runtime-${{ github.run_id }}
+          path: |
+            runtime/

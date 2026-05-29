@@ -1,0 +1,174 @@
+# weekly_intro_monitor 完整配置范例
+# 此配置可完整复现原 weekly_intro_monitor skill 的所有功能
+
+name: weekly_intro_monitor
+description: 转介绍业绩监控 — 美澳/港澳团队
+
+# 凭证文件路径（包含 BI/钉钉 API 密钥）
+secrets_file: ~/.claude/secrets/intro_monitor.env
+
+# 调度规则
+schedule:
+  weekdays: [1, 2]  # 0=周一, 1=周二, 2=周三...
+
+# 团队配置
+teams:
+  美澳:
+    groups: [美澳1组, 美澳2组, 美澳3组, 美澳4组, 美澳5组]
+    tl_map:
+      美澳1组: {name: 刘洋, userid: ""}
+      美澳2组: {name: 沙明亮, userid: ""}
+      美澳3组: {name: 邵婷婷, userid: ""}
+      美澳4组: {name: 万爽, userid: ""}
+      美澳5组: {name: 毕金玲, userid: ""}
+    schedule:
+      phase1: "09:00"
+      phase1_deadline: "10:00"
+      phase2: "11:30"
+      phase3: "16:00"
+    chatid_key: DINGTALK_TEST_CHATID  # env key
+
+  港澳:
+    groups: [港澳1组, 港澳2组, 港澳组, 台湾组]
+    tl_map:
+      港澳1组: {name: 叶素姜, userid: ""}
+      港澳2组: {name: 向梦清, userid: ""}
+      港澳组: {name: 谢昌馥, userid: ""}
+      台湾组: {name: 李文韬, userid: ""}
+    schedule:
+      phase1: "12:00"
+      phase1_deadline: "13:00"
+      phase2: "14:00"
+      phase3: "18:00"
+    chatid_key: DINGTALK_TEST_CHATID
+
+# 数据源配置
+datasources:
+  # Smartbi BI 报表
+  smartbi:
+    url_key: BI_URL
+    user_key: BI_USER
+    pass_key: BI_PASS
+    skill_dir_key: BI_SKILL_DIR  # 复用 bi_skill 的导出函数
+    reports:
+      progress:
+        name: "转介绍益智业绩播报_LP维度_末次渠道"
+        output_filename: "业绩播报_监控.xlsx"
+        date_filters: []  # 无筛选
+        wait_after_open: 5
+      followup:
+        name: "思维转介绍过程跟进报表_末次渠道"
+        output_filename: "外呼跟进_监控.xlsx"
+        date_filters:
+          - xpath: "/html/body/div[1]/div[2]/div[1]/div/div[2]/div/div/table/tbody/tr[2]/td/div/div/table/tbody/tr/td[3]/div/div/div/div/div/div[2]/div[1]/div[4]/table/tbody/tr[2]/td/div/div/div/table/tbody/tr[2]/td/table/tbody/tr[3]/td/div[1]/div[1]/div/table/tbody/tr/td[2]/div/input[1]"
+            value: "{this_monday}"
+        wait_after_filter: 60
+
+  # 钉钉日志（替代 Notable，TL 通过日志模板提交目标）
+  dingtalk_report:
+    app_key: DINGTALK_APP_KEY
+    app_secret_key: DINGTALK_APP_SECRET
+    template_name: "转介绍每日目标"
+    fields:
+      progress_target: "转介绍例子进度目标"
+      daily_target: "今日例子目标"
+      pools: "跟进池子"
+      followup_target: "外呼跟进目标"
+    pool_name_mapping:
+      "M1-M3": "M1-M3（首消）"
+      "续费带R": "续费带R"
+      "服务池": "服务池"
+    team_user_map:
+      美澳:
+        美澳1组: "userid_liuyang"
+        美澳2组: "userid_shamingliang"
+        美澳3组: "userid_shaotingting"
+        美澳4组: "userid_wanshuang"
+        美澳5组: "userid_bijinling"
+      港澳:
+        港澳1组: "userid_yesujiang"
+        港澳2组: "userid_xiangmengqing"
+        港澳组: "userid_xiechangfu"
+        台湾组: "userid_liwentao"
+
+# 阶段配置
+phases:
+  phase1:
+    type: registration_reminder
+    description: "TL 日志提交提醒"
+    datasource: dingtalk_report
+    message_template: |
+      ### 📋 {team} 转介绍目标提醒
+
+      **未提交日志 TL**：{unregistered_tls}
+
+      请在 {deadline} 前提交今日目标日志
+
+  phase2:
+    type: progress_monitor
+    description: "业绩进度监控"
+    datasource: smartbi.progress
+    notable_datasource: notable
+    excel_parsing:
+      header_rows: [3, 4]
+      columns:
+        team_group: ['团队/小组', '团队/小组']
+        lp: ['LP', 'LP']
+        tl: ['负责人', '负责人']
+        today_count: ['今日完成情况', '今日例子数']
+        monthly_target: ['海外转介绍例子数据', '海外转介绍例子目标']
+        total_count: ['海外转介绍例子数据', '全体带海外例子数']
+        today_target: ['今日完成情况', '今日例子目标']
+        monthly_completion_rate: ['海外转介绍例子数据', '例子达成率-月度']
+    thresholds:
+      progress: 0.8
+    table_render:
+      title_template: "【转介绍业绩进度监控 — {team}团队】"
+      headers: [小组, TL, 今日目标, 今日例子, 今日达标率, 月目标, 月例子, 月进度, GAP]
+      color_rules:
+        - column_index: 4  # 今日达标率
+          condition: "< 0.8"
+          color: red
+        - column_index: 8  # GAP
+          condition: "> 0"
+          color: red
+
+  phase3:
+    type: pool_warning
+    description: "外呼跟进预警"
+    datasource: smartbi.followup
+    pool_configs:
+      - name: "续费带R"
+        column_offset: 22
+        target: 0.5
+      - name: "M1-M3（首消）"
+        column_offset: 50
+        target: 0.5
+      - name: "服务池"
+        column_offset: 112
+        target: 0.5
+    thresholds:
+      call_low: 0.5
+      min_call_with_zero_conversion: 10
+    table_render:
+      title_template: "【转介绍外呼跟进监控 — {team}团队】"
+      headers: [小组, 池子, 实际跟进率, 目标, 状态]
+      color_rules:
+        - column_index: 2  # 实际跟进率
+          condition: "status == '未达标'"
+          color: red
+        - column_index: 4  # 状态
+          condition: "status == '未达标'"
+          color: red
+
+# 通知器配置
+notifier:
+  type: dingtalk_robot
+  robot_code_key: DINGTALK_ROBOT_CODE
+  app_key: DINGTALK_APP_KEY
+  app_secret_key: DINGTALK_APP_SECRET
+
+# 全局参数
+globals:
+  output_dir: ~/Downloads
+  target_pools: ["M1-M3（首消）", "续费带R", "服务池"]
